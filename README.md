@@ -25,7 +25,7 @@ A cross-platform Python toolkit for digital forensics and intrusion detection. R
 ### 1. Install dependencies
 
 ```bash
-git clone https://github.com/yourname/pyforensix.git
+git clone https://github.com/Kodjocares/pyforensix.git
 cd pyforensix
 pip install -r requirements.txt
 
