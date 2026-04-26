@@ -1,0 +1,4 @@
+# PyForensix — System Forensics & Intrusion Detection Toolkit
+__version__ = '1.0.0'
+__author__  = 'PyForensix Contributors'
+__license__ = 'MIT'

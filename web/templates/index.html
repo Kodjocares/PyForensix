@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PyForensix — Live Threat Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:     #070b14;
+    --bg2:    #0c1220;
+    --bg3:    #111827;
+    --bg4:    #1a2235;
+    --accent: #00e5b4;
+    --blue:   #38bdf8;
+    --red:    #f43f5e;
+    --orange: #fb923c;
+    --yellow: #fbbf24;
+    --green:  #34d399;
+    --purple: #a78bfa;
+    --text:   #e2e8f0;
+    --muted:  #64748b;
+    --border: #1e2d45;
+    --font:   'Courier New', 'Lucida Console', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+
+  /* ── Header ── */
+  #header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-shrink: 0;
+    z-index: 100;
+  }
+  .logo { color: var(--accent); font-size: 16px; font-weight: 700; letter-spacing: 3px; white-space: nowrap; }
+  .logo span { color: var(--muted); font-size: 11px; font-weight: 400; margin-left: 8px; letter-spacing: 1px; }
+  #risk-badge {
+    padding: 3px 12px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    background: var(--bg4);
+    color: var(--muted);
+    transition: all .3s;
+    white-space: nowrap;
+  }
+  #conn-badge { font-size: 10px; color: var(--green); }
+  .hdr-spacer { flex: 1; }
+  .hdr-stat { text-align: center; min-width: 60px; }
+  .hdr-stat .val { font-size: 18px; font-weight: 700; line-height: 1; }
+  .hdr-stat .lbl { font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+  .btn {
+    background: var(--bg4);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    font-family: var(--font);
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 3px;
+    letter-spacing: 1px;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--accent); color: var(--bg); }
+  .btn.danger { color: var(--red); border-color: var(--red); }
+  .btn.danger:hover { background: var(--red); color: #fff; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* ── Alert banner ── */
+  #alert-banner {
+    height: 28px;
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    flex-shrink: 0;
+    gap: 12px;
+    padding: 0 12px;
+  }
+  .banner-label { font-size: 9px; color: var(--muted); letter-spacing: 2px; white-space: nowrap; }
+  #alert-ticker { flex: 1; overflow: hidden; white-space: nowrap; }
+  .ticker-item { display: inline-block; padding: 0 32px; font-size: 11px; animation: none; }
+  .ticker-item.CRITICAL { color: var(--red); }
+  .ticker-item.HIGH     { color: var(--orange); }
+  .ticker-item.MEDIUM   { color: var(--yellow); }
+  .ticker-item.NEW_PROCESS { color: var(--purple); }
+
+  /* ── Main layout ── */
+  #main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Sidebar nav ── */
+  #sidebar {
+    width: 180px;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+  .nav-section { padding: 12px 0 4px; }
+  .nav-section-lbl { font-size: 9px; color: var(--muted); letter-spacing: 2px; padding: 0 14px 6px; text-transform: uppercase; }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 12px;
+    border-left: 2px solid transparent;
+    transition: all .15s;
+  }
+  .nav-item:hover { background: var(--bg4); color: var(--text); }
+  .nav-item.active { background: var(--bg4); color: var(--accent); border-left-color: var(--accent); }
+  .nav-badge {
+    margin-left: auto;
+    background: var(--red);
+    color: #fff;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 9px;
+    min-width: 18px;
+    text-align: center;
+    display: none;
+  }
+  .nav-badge.show { display: inline-block; }
+
+  /* ── Content area ── */
+  #content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* ── Panels ── */
+  .tab-panel { display: none; flex-direction: column; gap: 14px; }
+  .tab-panel.active { display: flex; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .card-header {
+    background: var(--bg3);
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-title { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--blue); }
+  .card-body { padding: 12px; }
+  .card-actions { margin-left: auto; display: flex; gap: 8px; }
+
+  /* ── Stat grid ── */
+  .stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+  .stat-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+    text-align: center;
+  }
+  .stat-val { font-size: 26px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+  .stat-lbl { font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .stat-sub { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+  /* ── Gauge bars ── */
+  .gauge-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .gauge-label { width: 80px; font-size: 11px; color: var(--muted); flex-shrink: 0; }
+  .gauge-track { flex: 1; background: var(--bg4); border-radius: 2px; height: 6px; overflow: hidden; }
+  .gauge-fill { height: 100%; border-radius: 2px; transition: width .5s ease; background: var(--accent); }
+  .gauge-fill.warn { background: var(--yellow); }
+  .gauge-fill.danger { background: var(--red); }
+  .gauge-val { width: 40px; text-align: right; font-size: 11px; color: var(--text); }
+
+  /* ── Charts ── */
+  .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .chart-wrap { position: relative; height: 180px; }
+
+  /* ── Tables ── */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .data-table th {
+    background: var(--bg3);
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .data-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--bg3);
+    vertical-align: middle;
+    word-break: break-all;
+    max-width: 260px;
+  }
+  .data-table tr:hover td { background: var(--bg4); }
+  .data-table .mono { font-family: var(--font); font-size: 10px; }
+
+  /* ── Severity badges ── */
+  .sev {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 2px;
+    letter-spacing: .5px;
+    white-space: nowrap;
+  }
+  .sev-CRITICAL { background: #f43f5e22; color: var(--red); border: 1px solid #f43f5e55; }
+  .sev-HIGH     { background: #fb923c22; color: var(--orange); border: 1px solid #fb923c55; }
+  .sev-MEDIUM   { background: #fbbf2422; color: var(--yellow); border: 1px solid #fbbf2455; }
+  .sev-LOW      { background: #34d39922; color: var(--green); border: 1px solid #34d39955; }
+  .sev-OK       { background: #1e2d45; color: var(--muted); border: 1px solid var(--border); }
+  .sev-CLEAN    { background: #34d39922; color: var(--green); border: 1px solid #34d39955; }
+  .sev-INFO     { background: #38bdf822; color: var(--blue); border: 1px solid #38bdf855; }
+
+  /* ── Threat intel panel ── */
+  .intel-form { display: flex; gap: 8px; margin-bottom: 12px; }
+  .intel-form input {
+    flex: 1;
+    background: var(--bg4);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    font-family: var(--font);
+    font-size: 12px;
+    border-radius: 3px;
+    outline: none;
+  }
+  .intel-form input:focus { border-color: var(--accent); }
+
+  /* ── YARA panel ── */
+  .yara-form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .yara-form input {
+    flex: 1;
+    min-width: 200px;
+    background: var(--bg4);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    font-family: var(--font);
+    font-size: 12px;
+    border-radius: 3px;
+    outline: none;
+  }
+  .yara-form input:focus { border-color: var(--accent); }
+
+  /* ── Alert stream ── */
+  #alert-stream {
+    max-height: 320px;
+    overflow-y: auto;
+    font-size: 11px;
+  }
+  .alert-entry {
+    display: flex;
+    gap: 10px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--bg3);
+    align-items: flex-start;
+    animation: fadeIn .3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+  .alert-ts { color: var(--muted); font-size: 10px; white-space: nowrap; flex-shrink: 0; }
+  .alert-type { font-size: 9px; font-weight: 700; letter-spacing: .5px; white-space: nowrap; flex-shrink: 0; }
+  .alert-msg { flex: 1; color: var(--text); word-break: break-all; }
+
+  /* ── Capture panel ── */
+  .capture-stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 12px; }
+  .capture-stat { background: var(--bg4); border-radius: 3px; padding: 10px; text-align: center; }
+  .capture-stat .val { font-size: 20px; font-weight: 700; color: var(--blue); }
+  .capture-stat .lbl { font-size: 9px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Progress bar ── */
+  #scan-progress-wrap { display: none; margin-bottom: 10px; }
+  #scan-progress-bar { height: 3px; background: var(--bg4); border-radius: 2px; overflow: hidden; }
+  #scan-progress-fill { height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
+  #scan-progress-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── MITRE tag ── */
+  .mitre { font-size: 9px; background: #38bdf812; color: var(--blue); border: 1px solid #38bdf830; padding: 1px 5px; border-radius: 2px; white-space: nowrap; }
+
+  /* ── API key config ── */
+  .config-form { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; }
+  .config-form label { font-size: 11px; color: var(--muted); }
+  .config-form input {
+    background: var(--bg4); border: 1px solid var(--border);
+    color: var(--text); padding: 5px 8px;
+    font-family: var(--font); font-size: 11px;
+    border-radius: 3px; outline: none;
+  }
+  .config-form input:focus { border-color: var(--accent); }
+
+  /* ── Pulse dot ── */
+  .pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  .pulse.off { background: var(--muted); animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.3)} }
+
+  /* ── Spinner ── */
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Empty state ── */
+  .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ HEADER ═══════════════════ -->
+<div id="header">
+  <div class="logo">⚡ PYFORENSIX <span>THREAT DASHBOARD</span></div>
+  <span id="conn-badge">● LIVE</span>
+  <div style="width:1px;height:20px;background:var(--border)"></div>
+  <div class="hdr-stat"><div class="stat-val" id="h-critical" style="color:var(--red)">0</div><div class="lbl">CRITICAL</div></div>
+  <div class="hdr-stat"><div class="stat-val" id="h-high"     style="color:var(--orange)">0</div><div class="lbl">HIGH</div></div>
+  <div class="hdr-stat"><div class="stat-val" id="h-medium"   style="color:var(--yellow)">0</div><div class="lbl">MEDIUM</div></div>
+  <div class="hdr-stat"><div class="stat-val" id="h-score"    style="color:var(--accent)">—</div><div class="lbl">SCORE</div></div>
+  <span id="risk-badge">NOT SCANNED</span>
+  <div class="hdr-spacer"></div>
+  <button class="btn" id="btn-scan" onclick="startScan()">▶ Full Scan</button>
+  <button class="btn" id="btn-report" onclick="downloadReport()" disabled>⬇ Report</button>
+</div>
+
+<!-- ═══════════════════ TICKER ═══════════════════ -->
+<div id="alert-banner">
+  <div class="banner-label">⚡ LIVE ALERTS</div>
+  <div id="alert-ticker"><span class="ticker-item" style="color:var(--muted)">Monitoring active — no critical alerts</span></div>
+</div>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<div id="main">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-lbl">Monitor</div>
+      <div class="nav-item active" onclick="showTab('overview')" id="nav-overview">
+        <span>📊</span> Overview
+      </div>
+      <div class="nav-item" onclick="showTab('alerts')" id="nav-alerts">
+        <span>🚨</span> Alerts
+        <span class="nav-badge" id="badge-alerts">0</span>
+      </div>
+      <div class="nav-item" onclick="showTab('live')" id="nav-live">
+        <span>📡</span> Live Metrics
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-lbl">Analysis</div>
+      <div class="nav-item" onclick="showTab('processes')" id="nav-processes">
+        <span>🔍</span> Processes
+        <span class="nav-badge" id="badge-processes">0</span>
+      </div>
+      <div class="nav-item" onclick="showTab('network')" id="nav-network">
+        <span>🌐</span> Network
+        <span class="nav-badge" id="badge-network">0</span>
+      </div>
+      <div class="nav-item" onclick="showTab('capture')" id="nav-capture">
+        <span>📦</span> Capture
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-lbl">Tools</div>
+      <div class="nav-item" onclick="showTab('yara')" id="nav-yara">
+        <span>🛡</span> YARA Scanner
+      </div>
+      <div class="nav-item" onclick="showTab('intel')" id="nav-intel">
+        <span>🌍</span> Threat Intel
+      </div>
+      <div class="nav-item" onclick="showTab('config')" id="nav-config">
+        <span>⚙</span> Config
+      </div>
+    </div>
+    <div style="flex:1"></div>
+    <div style="padding:12px;font-size:9px;color:var(--muted);letter-spacing:.5px">
+      PyForensix v2.0<br>
+      <span id="sys-info-mini"></span>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div id="content">
+
+    <!-- ══════ OVERVIEW ══════ -->
+    <div class="tab-panel active" id="tab-overview">
+      <div id="scan-progress-wrap">
+        <div id="scan-progress-bar"><div id="scan-progress-fill"></div></div>
+        <div id="scan-progress-label">Initializing...</div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-val" id="ov-critical" style="color:var(--red)">—</div><div class="stat-lbl">Critical</div></div>
+        <div class="stat-card"><div class="stat-val" id="ov-high"     style="color:var(--orange)">—</div><div class="stat-lbl">High</div></div>
+        <div class="stat-card"><div class="stat-val" id="ov-medium"   style="color:var(--yellow)">—</div><div class="stat-lbl">Medium</div></div>
+        <div class="stat-card"><div class="stat-val" id="ov-low"      style="color:var(--green)">—</div><div class="stat-lbl">Low</div></div>
+        <div class="stat-card"><div class="stat-val" id="ov-procs"    style="color:var(--blue)">—</div><div class="stat-lbl">Processes</div></div>
+        <div class="stat-card"><div class="stat-val" id="ov-ports"    style="color:var(--purple)">—</div><div class="stat-lbl">Open Ports</div></div>
+      </div>
+      <div class="chart-row">
+        <div class="card">
+          <div class="card-header"><div class="card-title">CPU & Memory</div></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="chart-cpu-mem"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Network I/O (bytes/s)</div></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="chart-net"></canvas></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">System Resources</div>
+        </div>
+        <div class="card-body">
+          <div class="gauge-row"><div class="gauge-label">CPU</div><div class="gauge-track"><div class="gauge-fill" id="g-cpu" style="width:0%"></div></div><div class="gauge-val" id="gv-cpu">—</div></div>
+          <div class="gauge-row"><div class="gauge-label">Memory</div><div class="gauge-track"><div class="gauge-fill" id="g-mem" style="width:0%"></div></div><div class="gauge-val" id="gv-mem">—</div></div>
+          <div class="gauge-row"><div class="gauge-label">Disk</div><div class="gauge-track"><div class="gauge-fill" id="g-disk" style="width:0%"></div></div><div class="gauge-val" id="gv-disk">—</div></div>
+          <div class="gauge-row"><div class="gauge-label">Net ↓</div><div class="gauge-track"><div class="gauge-fill" id="g-recv" style="width:0%;background:var(--blue)"></div></div><div class="gauge-val" id="gv-recv">—</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Top Processes (by CPU)</div></div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" id="tbl-top-procs">
+            <thead><tr><th>PID</th><th>Name</th><th>CPU%</th><th>MEM%</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ ALERTS ══════ -->
+    <div class="tab-panel" id="tab-alerts">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🚨 Live Alert Stream</div>
+          <div class="pulse" id="alert-pulse"></div>
+          <div class="card-actions">
+            <button class="btn danger" onclick="clearAlerts()">Clear</button>
+          </div>
+        </div>
+        <div id="alert-stream" class="card-body" style="padding:0">
+          <div class="empty">No alerts yet. Monitoring active.</div>
+        </div>
+      </div>
+      <div class="card" id="scan-alerts-card" style="display:none">
+        <div class="card-header"><div class="card-title">Scan Findings</div></div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" id="tbl-scan-alerts">
+            <thead><tr><th>Severity</th><th>Category</th><th>Finding</th><th>MITRE</th><th>Flags</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ LIVE METRICS ══════ -->
+    <div class="tab-panel" id="tab-live">
+      <div class="chart-row">
+        <div class="card">
+          <div class="card-header"><div class="card-title">CPU % (60s)</div></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="chart-cpu60"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Memory % (60s)</div></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="chart-mem60"></canvas></div></div>
+        </div>
+      </div>
+      <div class="chart-row">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Network Sent (60s)</div></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="chart-sent60"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Network Recv (60s)</div></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="chart-recv60"></canvas></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">New Process Events</div></div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" id="tbl-new-procs">
+            <thead><tr><th>Time</th><th>PID</th><th>Name</th><th>User</th><th>Command</th></tr></thead>
+            <tbody><tr><td colspan="5" class="empty">Watching for new processes...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ PROCESSES ══════ -->
+    <div class="tab-panel" id="tab-processes">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Suspicious Processes</div>
+          <div class="card-actions">
+            <button class="btn" onclick="loadProcesses()">↻ Refresh</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" id="tbl-processes">
+            <thead><tr><th>Sev</th><th>PID</th><th>Name</th><th>User</th><th>Exe</th><th>Flags</th></tr></thead>
+            <tbody><tr><td colspan="6" class="empty">Run a scan to populate process findings.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ NETWORK ══════ -->
+    <div class="tab-panel" id="tab-network">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Suspicious Connections</div>
+          <div class="card-actions">
+            <button class="btn" onclick="loadNetwork()">↻ Refresh</button>
+            <button class="btn" onclick="enrichConnections()">🌍 Enrich IPs</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" id="tbl-conns">
+            <thead><tr><th>Sev</th><th>PID</th><th>Process</th><th>Local</th><th>Remote</th><th>Status</th><th>Flags</th></tr></thead>
+            <tbody><tr><td colspan="7" class="empty">Run a scan to populate network findings.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Open Ports</div></div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" id="tbl-ports">
+            <thead><tr><th>Port</th><th>IP</th><th>Process</th><th>PID</th><th>Note</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" id="intel-enrich-results" style="display:none">
+        <div class="card-header"><div class="card-title">IP Threat Intelligence</div></div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" id="tbl-enrich">
+            <thead><tr><th>IP</th><th>Threat Level</th><th>Country</th><th>ISP</th><th>Abuse Score</th><th>VT Malicious</th><th>Tor</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ PACKET CAPTURE ══════ -->
+    <div class="tab-panel" id="tab-capture">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Live Packet Capture</div>
+          <div class="pulse off" id="cap-pulse"></div>
+          <div class="card-actions">
+            <select id="cap-iface" style="background:var(--bg4);border:1px solid var(--border);color:var(--text);padding:4px 8px;font-family:var(--font);font-size:11px;border-radius:3px">
+              <option value="">Default interface</option>
+            </select>
+            <button class="btn" id="btn-cap-start" onclick="startCapture()">▶ Start</button>
+            <button class="btn danger" id="btn-cap-stop" onclick="stopCapture()" disabled>■ Stop</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="capture-stats">
+            <div class="capture-stat"><div class="val" id="cap-total">0</div><div class="lbl">Packets</div></div>
+            <div class="capture-stat"><div class="val" id="cap-alerts">0</div><div class="lbl">Alerts</div></div>
+            <div class="capture-stat"><div class="val" id="cap-bytes">0</div><div class="lbl">KB</div></div>
+            <div class="capture-stat"><div class="val" id="cap-conns">0</div><div class="lbl">Connections</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Capture Alerts</div></div>
+        <div class="card-body" style="padding:0">
+          <div id="cap-alerts-stream" style="max-height:300px;overflow-y:auto">
+            <div class="empty">Start capture to see alerts.</div>
+          </div>
+        </div>
+      </div>
+      <div class="chart-row">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Protocol Distribution</div></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="chart-proto"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Top Destination Ports</div></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="chart-ports"></canvas></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ YARA ══════ -->
+    <div class="tab-panel" id="tab-yara">
+      <div class="card">
+        <div class="card-header"><div class="card-title">🛡 YARA Scanner</div></div>
+        <div class="card-body">
+          <div class="yara-form">
+            <input id="yara-path" placeholder="/path/to/scan  (e.g. /tmp or C:\Users\Bob\Downloads)" value="/tmp">
+            <input id="yara-max" placeholder="Max files" value="300" style="width:100px;flex:none">
+            <button class="btn" onclick="startYaraScan()">▶ Scan</button>
+          </div>
+          <div id="yara-status" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Built-in Rules</div></div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" id="tbl-rules">
+            <thead><tr><th>Rule</th><th>Severity</th><th>Description</th><th>MITRE</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" id="yara-results-card" style="display:none">
+        <div class="card-header"><div class="card-title">Scan Results</div></div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" id="tbl-yara">
+            <thead><tr><th>Severity</th><th>File</th><th>Rules Matched</th><th>Hash (SHA-256)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ THREAT INTEL ══════ -->
+    <div class="tab-panel" id="tab-intel">
+      <div class="card">
+        <div class="card-header"><div class="card-title">IP Reputation Lookup</div></div>
+        <div class="card-body">
+          <div class="intel-form">
+            <input id="intel-ip" placeholder="Enter IP address (e.g. 8.8.8.8)" type="text">
+            <button class="btn" onclick="lookupIp()">🔍 Lookup</button>
+          </div>
+          <div id="intel-ip-result"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">File Hash Lookup</div></div>
+        <div class="card-body">
+          <div class="intel-form">
+            <input id="intel-hash" placeholder="MD5 / SHA-256 hash" type="text">
+            <button class="btn" onclick="lookupHash()">🔍 Lookup</button>
+          </div>
+          <div id="intel-hash-result"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">API Status</div></div>
+        <div class="card-body">
+          <table class="data-table" id="tbl-api-status">
+            <thead><tr><th>Source</th><th>Status</th><th>Notes</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ CONFIG ══════ -->
+    <div class="tab-panel" id="tab-config">
+      <div class="card">
+        <div class="card-header"><div class="card-title">API Keys</div></div>
+        <div class="card-body">
+          <p style="font-size:11px;color:var(--muted);margin-bottom:12px">
+            Keys are set as environment variables and never stored in the app.<br>
+            Set them before starting: <code style="color:var(--accent)">export ABUSEIPDB_KEY=xxx</code>
+          </p>
+          <div class="config-form">
+            <label>ABUSEIPDB_KEY</label>
+            <input type="password" placeholder="Set via env var — not editable here" disabled>
+            <label>VIRUSTOTAL_KEY</label>
+            <input type="password" placeholder="Set via env var — not editable here" disabled>
+            <label>SHODAN_KEY</label>
+            <input type="password" placeholder="Set via env var — not editable here" disabled>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">System Information</div></div>
+        <div class="card-body" style="padding:0">
+          <table class="data-table" id="tbl-sysinfo">
+            <thead><tr><th>Property</th><th>Value</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<script>
+// ═══════════════════ STATE ═══════════════════
+const state = {
+  socket: null,
+  currentScanId: null,
+  alertCount: 0,
+  processCount: 0,
+  networkCount: 0,
+  lastMetric: null,
+  cpuData: Array(60).fill(0),
+  memData: Array(60).fill(0),
+  netSentData: Array(60).fill(0),
+  netRecvData: Array(60).fill(0),
+  charts: {},
+  captureRunning: false,
+};
+
+// ═══════════════════ SOCKET.IO ═══════════════════
+function initSocket() {
+  state.socket = io();
+
+  state.socket.on('connect', () => {
+    document.getElementById('conn-badge').textContent = '● LIVE';
+    document.getElementById('conn-badge').style.color = 'var(--green)';
+  });
+
+  state.socket.on('disconnect', () => {
+    document.getElementById('conn-badge').textContent = '○ OFFLINE';
+    document.getElementById('conn-badge').style.color = 'var(--red)';
+  });
+
+  state.socket.on('metric', (data) => {
+    state.lastMetric = data;
+    updateMetrics(data);
+  });
+
+  state.socket.on('alert', (alert) => {
+    addAlert(alert);
+    updateTicker(alert);
+  });
+
+  state.socket.on('scan_progress', (data) => {
+    const pct = data.pct || 0;
+    document.getElementById('scan-progress-fill').style.width = pct + '%';
+    document.getElementById('scan-progress-label').textContent = `Scanning: ${data.step}... ${pct}%`;
+  });
+
+  state.socket.on('scan_complete', (data) => {
+    document.getElementById('scan-progress-wrap').style.display = 'none';
+    document.getElementById('btn-scan').disabled = false;
+    document.getElementById('btn-scan').textContent = '▶ Full Scan';
+    document.getElementById('btn-report').disabled = false;
+    updateSummary(data);
+    loadScanResults(state.currentScanId);
+    addAlert({type:'SCAN_COMPLETE', severity:'INFO',
+              message:`Scan complete — Risk: ${data.risk_level} | Score: ${data.score}`,
+              timestamp: new Date().toISOString()});
+  });
+
+  state.socket.on('scan_error', (data) => {
+    document.getElementById('scan-progress-wrap').style.display = 'none';
+    document.getElementById('btn-scan').disabled = false;
+    document.getElementById('btn-scan').textContent = '▶ Full Scan';
+    addAlert({type:'SCAN_ERROR', severity:'CRITICAL', message: data.error, timestamp: new Date().toISOString()});
+  });
+
+  state.socket.on('yara_results', (data) => {
+    document.getElementById('yara-status').textContent =
+      `✓ Scan complete — ${data.count} files matched in ${data.path}`;
+    renderYaraResults(data.matches);
+  });
+
+  state.socket.on('capture_status', (data) => {
+    state.captureRunning = data.running;
+    document.getElementById('btn-cap-start').disabled = data.running;
+    document.getElementById('btn-cap-stop').disabled = !data.running;
+    document.getElementById('cap-pulse').className = data.running ? 'pulse' : 'pulse off';
+    if (data.error) {
+      addAlert({type:'CAPTURE_ERROR', severity:'HIGH', message: data.error, timestamp: new Date().toISOString()});
+    }
+    if (data.running) pollCaptureStats();
+  });
+
+  state.socket.on('capture_stats', (data) => {
+    updateCaptureStats(data);
+  });
+}
+
+// ═══════════════════ TABS ═══════════════════
+function showTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.getElementById('nav-' + tab).classList.add('active');
+
+  if (tab === 'yara') loadYaraRules();
+  if (tab === 'intel') loadApiStatus();
+  if (tab === 'config') loadSysInfo();
+  if (tab === 'capture') loadInterfaces();
+}
+
+// ═══════════════════ METRICS ═══════════════════
+function updateMetrics(d) {
+  // Gauges
+  setGauge('cpu',  d.cpu_pct,  '%');
+  setGauge('mem',  d.mem_pct,  '%');
+  setGauge('disk', d.disk_pct, '%');
+
+  const recvKbps = (d.net_recv_bps / 1024).toFixed(1);
+  document.getElementById('g-recv').style.width = Math.min(d.net_recv_bps / 10000 * 100, 100) + '%';
+  document.getElementById('gv-recv').textContent = recvKbps + ' KB/s';
+
+  // Top processes table
+  const tbody = document.querySelector('#tbl-top-procs tbody');
+  tbody.innerHTML = (d.top_processes || []).map(p => `
+    <tr>
+      <td>${p.pid}</td>
+      <td>${p.name}</td>
+      <td style="color:${p.cpu_pct>50?'var(--orange)':p.cpu_pct>80?'var(--red)':'var(--text)'}">${p.cpu_pct}%</td>
+      <td>${p.mem_pct}%</td>
+      <td><span class="sev sev-${p.status === 'running' ? 'OK' : 'LOW'}">${p.status}</span></td>
+    </tr>`).join('');
+
+  // New processes
+  if (d.new_processes && d.new_processes.length > 0) {
+    const tbody2 = document.querySelector('#tbl-new-procs tbody');
+    for (const p of d.new_processes) {
+      const ts = new Date(d.timestamp).toLocaleTimeString();
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${ts}</td><td>${p.pid}</td><td style="color:var(--yellow)">${p.name}</td><td>${p.user||''}</td><td class="mono">${(p.cmd||'').slice(0,80)}</td>`;
+      if (tbody2.querySelector('.empty')) tbody2.innerHTML = '';
+      tbody2.insertBefore(tr, tbody2.firstChild);
+      if (tbody2.children.length > 50) tbody2.removeChild(tbody2.lastChild);
+    }
+  }
+
+  // History charts
+  if (d.cpu_history)      updateSparkline('chart-cpu60',   d.cpu_history,      'CPU %',        '#00e5b4');
+  if (d.mem_history)      updateSparkline('chart-mem60',   d.mem_history,      'Memory %',     '#a78bfa');
+  if (d.net_sent_history) updateSparkline('chart-sent60',  d.net_sent_history, 'Sent B/s',     '#38bdf8');
+  if (d.net_recv_history) updateSparkline('chart-recv60',  d.net_recv_history, 'Recv B/s',     '#fb923c');
+
+  // Mini overview chart
+  state.cpuData.push(d.cpu_pct); state.cpuData.shift();
+  state.memData.push(d.mem_pct); state.memData.shift();
+  state.netSentData.push(d.net_sent_bps); state.netSentData.shift();
+  state.netRecvData.push(d.net_recv_bps); state.netRecvData.shift();
+  updateOverviewCharts();
+}
+
+function setGauge(id, pct, unit) {
+  const fill = document.getElementById('g-' + id);
+  const val  = document.getElementById('gv-' + id);
+  fill.style.width = Math.min(pct, 100) + '%';
+  fill.className = 'gauge-fill' + (pct > 90 ? ' danger' : pct > 70 ? ' warn' : '');
+  val.textContent = pct + unit;
+}
+
+// ═══════════════════ CHARTS ═══════════════════
+const CHART_DEFAULTS = {
+  type: 'line',
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 0 },
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: { display: true, grid: { color: '#1a2235' }, ticks: { color: '#64748b', font: { size: 10 } }, border: { display: false } }
+    },
+    elements: { point: { radius: 0 }, line: { tension: 0.3 } }
+  }
+};
+
+function makeChart(id, label, color, maxY) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return null;
+  const labels = Array(60).fill('');
+  const cfg = JSON.parse(JSON.stringify(CHART_DEFAULTS));
+  if (maxY) cfg.options.scales.y.max = maxY;
+  cfg.data = {
+    labels,
+    datasets: [{
+      label, data: Array(60).fill(0),
+      borderColor: color, backgroundColor: color + '18',
+      borderWidth: 1.5, fill: true,
+    }]
+  };
+  return new Chart(ctx, cfg);
+}
+
+function updateSparkline(id, data, label, color) {
+  if (!state.charts[id]) {
+    state.charts[id] = makeChart(id, label, color);
+  }
+  if (!state.charts[id]) return;
+  state.charts[id].data.datasets[0].data = data;
+  state.charts[id].update('none');
+}
+
+function updateOverviewCharts() {
+  if (!state.charts['chart-cpu-mem']) {
+    const ctx = document.getElementById('chart-cpu-mem');
+    if (ctx) {
+      state.charts['chart-cpu-mem'] = new Chart(ctx, {
+        type: 'line',
+        options: { ...CHART_DEFAULTS.options, plugins: { legend: { display: true, labels: { color: '#64748b', font: { size: 10 } } } } },
+        data: { labels: Array(60).fill(''), datasets: [
+          { label: 'CPU %',  data: state.cpuData, borderColor: '#00e5b4', borderWidth: 1.5, fill: false, tension: 0.3, pointRadius: 0 },
+          { label: 'MEM %',  data: state.memData, borderColor: '#a78bfa', borderWidth: 1.5, fill: false, tension: 0.3, pointRadius: 0 },
+        ]}
+      });
+    }
+  } else {
+    state.charts['chart-cpu-mem'].data.datasets[0].data = state.cpuData;
+    state.charts['chart-cpu-mem'].data.datasets[1].data = state.memData;
+    state.charts['chart-cpu-mem'].update('none');
+  }
+
+  if (!state.charts['chart-net']) {
+    const ctx = document.getElementById('chart-net');
+    if (ctx) {
+      state.charts['chart-net'] = new Chart(ctx, {
+        type: 'line',
+        options: { ...CHART_DEFAULTS.options, plugins: { legend: { display: true, labels: { color: '#64748b', font: { size: 10 } } } } },
+        data: { labels: Array(60).fill(''), datasets: [
+          { label: 'Sent',  data: state.netSentData, borderColor: '#38bdf8', borderWidth: 1.5, fill: false, tension: 0.3, pointRadius: 0 },
+          { label: 'Recv',  data: state.netRecvData, borderColor: '#fb923c', borderWidth: 1.5, fill: false, tension: 0.3, pointRadius: 0 },
+        ]}
+      });
+    }
+  } else {
+    state.charts['chart-net'].data.datasets[0].data = state.netSentData;
+    state.charts['chart-net'].data.datasets[1].data = state.netRecvData;
+    state.charts['chart-net'].update('none');
+  }
+}
+
+// ═══════════════════ ALERTS ═══════════════════
+const SEV_COLORS = { CRITICAL: 'var(--red)', HIGH: 'var(--orange)', MEDIUM: 'var(--yellow)', LOW: 'var(--green)', INFO: 'var(--blue)', NEW_PROCESS: 'var(--purple)' };
+
+function addAlert(alert) {
+  const stream = document.getElementById('alert-stream');
+  if (stream.querySelector('.empty')) stream.innerHTML = '';
+
+  const sev = alert.severity || alert.type || 'INFO';
+  const color = SEV_COLORS[sev] || SEV_COLORS['INFO'];
+  const ts = new Date(alert.timestamp || Date.now()).toLocaleTimeString();
+
+  const div = document.createElement('div');
+  div.className = 'alert-entry';
+  div.innerHTML = `
+    <div class="alert-ts">${ts}</div>
+    <div class="alert-type" style="color:${color}">${(alert.type||sev).slice(0,18)}</div>
+    <div class="alert-msg">${alert.message || ''}</div>`;
+  stream.insertBefore(div, stream.firstChild);
+  if (stream.children.length > 200) stream.removeChild(stream.lastChild);
+
+  // Badge
+  state.alertCount++;
+  const badge = document.getElementById('badge-alerts');
+  badge.textContent = state.alertCount;
+  badge.classList.add('show');
+
+  // Header counters for critical/high
+  if (sev === 'CRITICAL') {
+    const el = document.getElementById('h-critical');
+    el.textContent = parseInt(el.textContent || 0) + 1;
+  } else if (sev === 'HIGH') {
+    const el = document.getElementById('h-high');
+    el.textContent = parseInt(el.textContent || 0) + 1;
+  }
+}
+
+function clearAlerts() {
+  document.getElementById('alert-stream').innerHTML = '<div class="empty">Cleared.</div>';
+  state.alertCount = 0;
+  document.getElementById('badge-alerts').textContent = '0';
+}
+
+function updateTicker(alert) {
+  const ticker = document.getElementById('alert-ticker');
+  const sev = alert.severity || 'INFO';
+  const span = document.createElement('span');
+  span.className = `ticker-item ${sev}`;
+  span.textContent = `[${sev}] ${alert.message || alert.type}`;
+  if (ticker.children.length > 6) ticker.removeChild(ticker.firstChild);
+  ticker.appendChild(span);
+}
+
+// ═══════════════════ SCAN ═══════════════════
+async function startScan() {
+  const btn = document.getElementById('btn-scan');
+  btn.disabled = true;
+  btn.textContent = '⏳ Scanning...';
+  document.getElementById('scan-progress-wrap').style.display = 'block';
+  document.getElementById('scan-progress-fill').style.width = '2%';
+
+  const resp = await fetch('/api/scan', { method: 'POST' });
+  const data = await resp.json();
+  state.currentScanId = data.scan_id;
+}
+
+function updateSummary(data) {
+  const sm = data.summary || {};
+  document.getElementById('ov-critical').textContent = sm.CRITICAL || 0;
+  document.getElementById('ov-high').textContent     = sm.HIGH     || 0;
+  document.getElementById('ov-medium').textContent   = sm.MEDIUM   || 0;
+  document.getElementById('ov-low').textContent      = sm.LOW      || 0;
+  document.getElementById('h-critical').textContent  = sm.CRITICAL || 0;
+  document.getElementById('h-high').textContent      = sm.HIGH     || 0;
+  document.getElementById('h-medium').textContent    = sm.MEDIUM   || 0;
+  document.getElementById('h-score').textContent     = data.score  || 0;
+
+  const risk = data.risk_level || 'UNKNOWN';
+  const colors = { CRITICAL:'var(--red)', HIGH:'var(--orange)', MEDIUM:'var(--yellow)', LOW:'var(--green)', CLEAN:'var(--green)' };
+  const badge = document.getElementById('risk-badge');
+  badge.textContent = 'RISK: ' + risk;
+  badge.style.background = (colors[risk] || 'var(--bg4)') + '22';
+  badge.style.color = colors[risk] || 'var(--muted)';
+  badge.style.border = '1px solid ' + (colors[risk] || 'var(--border)') + '55';
+}
+
+async function loadScanResults(scanId) {
+  if (!scanId) return;
+  const resp = await fetch('/api/scan/' + scanId);
+  const data = await resp.json();
+
+  // Processes
+  const pb = document.querySelector('#tbl-processes tbody');
+  pb.innerHTML = '';
+  const procs = data.processes || [];
+  document.getElementById('ov-procs').textContent = procs.length;
+  if (procs.length === 0) {
+    pb.innerHTML = '<tr><td colspan="6" class="empty">No suspicious processes found.</td></tr>';
+  } else {
+    pb.innerHTML = procs.map(p => `<tr>
+      <td><span class="sev sev-${p.severity}">${p.severity}</span></td>
+      <td>${p.pid}</td><td>${p.name}</td><td>${p.username||''}</td>
+      <td class="mono" style="max-width:200px">${(p.exe||'').slice(-40)}</td>
+      <td style="color:var(--orange);font-size:10px">${(p.flags||[]).join(' | ')}</td>
+    </tr>`).join('');
+    document.getElementById('badge-processes').textContent = procs.length;
+    document.getElementById('badge-processes').classList.add('show');
+  }
+
+  // Network
+  const nb = document.querySelector('#tbl-conns tbody');
+  nb.innerHTML = '';
+  const conns = data.conns || [];
+  if (conns.length === 0) {
+    nb.innerHTML = '<tr><td colspan="7" class="empty">No suspicious connections found.</td></tr>';
+  } else {
+    nb.innerHTML = conns.map(c => `<tr>
+      <td><span class="sev sev-${c.severity}">${c.severity}</span></td>
+      <td>${c.pid||''}</td><td>${c.process_name||''}</td>
+      <td class="mono">${c.laddr||''}</td><td class="mono">${c.raddr||''}</td>
+      <td>${c.status||''}</td>
+      <td style="color:var(--orange);font-size:10px">${(c.flags||[]).join(' | ')}</td>
+    </tr>`).join('');
+    document.getElementById('badge-network').textContent = conns.length;
+    document.getElementById('badge-network').classList.add('show');
+  }
+
+  // Ports
+  const portb = document.querySelector('#tbl-ports tbody');
+  const ports = data.ports || [];
+  document.getElementById('ov-ports').textContent = ports.length;
+  portb.innerHTML = ports.map(p => `<tr style="${p.suspicious?'background:var(--bg4)':''}">
+    <td style="color:${p.suspicious?'var(--red)':'var(--text)'}">${p.port}</td>
+    <td class="mono">${p.ip||''}</td><td>${p.process_name||''}</td><td>${p.pid||''}</td>
+    <td style="color:var(--orange)">${p.note||''}</td>
+  </tr>`).join('');
+
+  // Scan alerts
+  const alerts = (data.report || {}).alerts || [];
+  if (alerts.length > 0) {
+    document.getElementById('scan-alerts-card').style.display = 'block';
+    document.querySelector('#tbl-scan-alerts tbody').innerHTML = alerts.map(a => {
+      const techs = (a.techniques || []).map(t => `<span class="mitre">${t.id}</span>`).join(' ');
+      const flags = (a.flags || []).map(f => `<code style="font-size:9px;background:var(--bg4);padding:1px 4px;border-radius:2px">${f}</code>`).join(' ');
+      return `<tr>
+        <td><span class="sev sev-${a.severity}">${a.severity}</span></td>
+        <td style="color:var(--blue);font-size:10px">${a.category||''}</td>
+        <td>${(a.title||'').slice(0,80)}</td>
+        <td>${techs}</td>
+        <td>${flags}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function downloadReport() {
+  if (!state.currentScanId) return;
+  window.open('/api/report/' + state.currentScanId + '/html', '_blank');
+}
+
+// ═══════════════════ PACKET CAPTURE ═══════════════════
+async function loadInterfaces() {
+  const resp = await fetch('/api/network/interfaces');
+  const ifaces = await resp.json();
+  const sel = document.getElementById('cap-iface');
+  sel.innerHTML = '<option value="">Default interface</option>';
+  ifaces.forEach(i => {
+    const opt = document.createElement('option');
+    opt.value = i.name;
+    opt.textContent = `${i.name} (${i.ip})`;
+    sel.appendChild(opt);
+  });
+}
+
+function startCapture() {
+  const iface = document.getElementById('cap-iface').value;
+  state.socket.emit('start_capture', { interface: iface || null });
+  document.getElementById('cap-alerts-stream').innerHTML = '';
+}
+
+function stopCapture() {
+  state.socket.emit('stop_capture');
+}
+
+function pollCaptureStats() {
+  const interval = setInterval(() => {
+    if (!state.captureRunning) { clearInterval(interval); return; }
+    state.socket.emit('request_capture_stats');
+  }, 2000);
+}
+
+function updateCaptureStats(data) {
+  const stats = data.stats || {};
+  document.getElementById('cap-total').textContent  = stats.total || 0;
+  document.getElementById('cap-alerts').textContent = (data.alerts || []).length;
+  document.getElementById('cap-bytes').textContent  = Math.round((stats.bytes_total || 0) / 1024);
+  document.getElementById('cap-conns').textContent  = Object.keys(stats.top_src_ips || {}).length;
+
+  // Capture alerts
+  const stream = document.getElementById('cap-alerts-stream');
+  for (const alert of (data.alerts || []).slice(-20)) {
+    const div = document.createElement('div');
+    const color = SEV_COLORS[alert.severity] || 'var(--text)';
+    div.className = 'alert-entry';
+    div.innerHTML = `<div class="alert-ts">${new Date(alert.timestamp).toLocaleTimeString()}</div>
+      <div class="alert-type" style="color:${color}">${alert.type}</div>
+      <div class="alert-msg">${alert.message}</div>`;
+    stream.appendChild(div);
+  }
+
+  // Protocol chart
+  const protos = stats.by_proto || {};
+  updateDonut('chart-proto', Object.keys(protos), Object.values(protos));
+
+  // Port chart
+  const ports = stats.top_dst_ports || {};
+  const portEntries = Object.entries(ports).slice(0, 8);
+  updateBar('chart-ports', portEntries.map(([p]) => p), portEntries.map(([,v]) => v));
+}
+
+function updateDonut(id, labels, data) {
+  const COLORS = ['#00e5b4','#38bdf8','#a78bfa','#fb923c','#f43f5e','#34d399','#fbbf24','#64748b'];
+  if (!state.charts[id]) {
+    const ctx = document.getElementById(id);
+    if (!ctx) return;
+    state.charts[id] = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data, backgroundColor: COLORS, borderWidth: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#64748b', font: { size: 10 } } } } }
+    });
+  } else {
+    state.charts[id].data.labels = labels;
+    state.charts[id].data.datasets[0].data = data;
+    state.charts[id].update('none');
+  }
+}
+
+function updateBar(id, labels, data) {
+  if (!state.charts[id]) {
+    const ctx = document.getElementById(id);
+    if (!ctx) return;
+    state.charts[id] = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets: [{ data, backgroundColor: '#38bdf822', borderColor: '#38bdf8', borderWidth: 1 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
+        plugins: { legend: { display: false } },
+        scales: { x: { ticks: { color: '#64748b', font: { size: 9 } } }, y: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { color: '#1a2235' } } }
+      }
+    });
+  } else {
+    state.charts[id].data.labels = labels;
+    state.charts[id].data.datasets[0].data = data;
+    state.charts[id].update('none');
+  }
+}
+
+// ═══════════════════ YARA ═══════════════════
+async function loadYaraRules() {
+  const resp = await fetch('/api/yara/rules');
+  const data = await resp.json();
+  const tbody = document.querySelector('#tbl-rules tbody');
+  if (!data.available) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">yara-python not installed. Run: <code style="color:var(--accent)">pip install yara-python</code></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = (data.rules || []).map(r => `<tr>
+    <td style="color:var(--accent)">${r.name}</td>
+    <td><span class="sev sev-${r.severity}">${r.severity}</span></td>
+    <td style="color:var(--muted)">${r.description}</td>
+    <td>${r.mitre ? `<span class="mitre">${r.mitre}</span>` : ''}</td>
+  </tr>`).join('');
+}
+
+async function startYaraScan() {
+  const path = document.getElementById('yara-path').value.trim();
+  const maxFiles = parseInt(document.getElementById('yara-max').value) || 200;
+  if (!path) return;
+  document.getElementById('yara-status').innerHTML = '<span class="spin">⟳</span> Scanning... (results will appear when complete)';
+  await fetch('/api/yara/scan', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ path, max_files: maxFiles })
+  });
+}
+
+function renderYaraResults(matches) {
+  const card = document.getElementById('yara-results-card');
+  card.style.display = 'block';
+  const tbody = document.querySelector('#tbl-yara tbody');
+  if (!matches || matches.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">No YARA matches found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = matches.map(m => {
+    const rules = (m.matches || []).map(r => `<div><span class="sev sev-${r.severity}">${r.severity}</span> ${r.rule}</div>`).join('');
+    return `<tr>
+      <td><span class="sev sev-${m.severity}">${m.severity}</span></td>
+      <td class="mono" style="font-size:10px">${m.path}</td>
+      <td>${rules}</td>
+      <td class="mono" style="font-size:10px;color:var(--muted)">${(m.file_hash||'').slice(0,20)}…</td>
+    </tr>`;
+  }).join('');
+}
+
+// ═══════════════════ THREAT INTEL ═══════════════════
+async function lookupIp() {
+  const ip = document.getElementById('intel-ip').value.trim();
+  if (!ip) return;
+  const result = document.getElementById('intel-ip-result');
+  result.innerHTML = '<div style="color:var(--muted);font-size:11px"><span class="spin">⟳</span> Looking up ' + ip + '...</div>';
+  const resp = await fetch('/api/intel/ip/' + ip);
+  const data = await resp.json();
+  result.innerHTML = renderIntelResult(data, 'ip');
+}
+
+async function lookupHash() {
+  const hash = document.getElementById('intel-hash').value.trim();
+  if (!hash) return;
+  const result = document.getElementById('intel-hash-result');
+  result.innerHTML = '<div style="color:var(--muted);font-size:11px"><span class="spin">⟳</span> Querying threat databases...</div>';
+  const resp = await fetch('/api/intel/hash/' + hash);
+  const data = await resp.json();
+  result.innerHTML = renderIntelResult(data, 'hash');
+}
+
+function renderIntelResult(data, type) {
+  const threat = data.threat_level || 'OK';
+  const color = { CRITICAL:'var(--red)', HIGH:'var(--orange)', MEDIUM:'var(--yellow)', LOW:'var(--green)', OK:'var(--muted)' }[threat] || 'var(--muted)';
+  let html = `<div style="margin-top:10px;padding:12px;background:var(--bg4);border-radius:4px;border:1px solid var(--border)">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span class="sev sev-${threat}">${threat}</span>
+      <span style="font-size:13px;font-weight:700;color:${color}">${data.ip || data.hash || ''}</span>
+    </div>`;
+
+  if (data.is_private) {
+    html += `<div style="color:var(--muted);font-size:11px">Private/internal address — no threat intel available.</div>`;
+  } else {
+    for (const [src, info] of Object.entries(data.sources || {})) {
+      html += `<div style="margin-bottom:8px"><div style="font-size:9px;color:var(--blue);letter-spacing:1px;margin-bottom:4px;text-transform:uppercase">${src}</div>`;
+      if (info.error) {
+        html += `<div style="color:var(--muted);font-size:11px">${info.error}</div>`;
+      } else if (info.found === false) {
+        html += `<div style="color:var(--green);font-size:11px">✓ Not found in database</div>`;
+      } else {
+        const fields = Object.entries(info).filter(([k]) => !['source','ip','hash','_http_error','_error'].includes(k));
+        html += `<table style="width:100%;border-collapse:collapse">` + fields.map(([k,v]) =>
+          v !== '' && v !== null && v !== undefined && v !== false ?
+          `<tr><td style="color:var(--muted);font-size:10px;padding:2px 0;width:140px">${k.replace(/_/g,' ')}</td><td style="font-size:10px;color:var(--text)">${Array.isArray(v)?v.join(', '):String(v).slice(0,120)}</td></tr>` : ''
+        ).join('') + `</table>`;
+      }
+      html += `</div>`;
+    }
+  }
+  html += `</div>`;
+  return html;
+}
+
+async function enrichConnections() {
+  const result_card = document.getElementById('intel-enrich-results');
+  result_card.style.display = 'block';
+  document.querySelector('#tbl-enrich tbody').innerHTML = '<tr><td colspan="7" class="empty"><span class="spin">⟳</span> Enriching IPs via threat intel...</td></tr>';
+  const resp = await fetch('/api/intel/enrich-scan', { method: 'POST' });
+  const data = await resp.json();
+  const tbody = document.querySelector('#tbl-enrich tbody');
+  const enriched = data.enriched || [];
+  if (enriched.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">No public IPs found to enrich.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = enriched.map(r => {
+    const abuse = r.sources?.abuseipdb || {};
+    const vt    = r.sources?.virustotal || {};
+    return `<tr>
+      <td class="mono">${r.ip}</td>
+      <td><span class="sev sev-${r.threat_level}">${r.threat_level}</span></td>
+      <td>${r.country || abuse.country || ''}</td>
+      <td style="color:var(--muted);font-size:10px">${r.isp || abuse.isp || ''}</td>
+      <td style="color:${(abuse.abuse_score||0)>50?'var(--red)':'var(--text)'}">${abuse.abuse_score ?? '—'}</td>
+      <td style="color:${(vt.malicious||0)>0?'var(--red)':'var(--text)'}">${vt.malicious ?? '—'}</td>
+      <td>${r.is_tor ? '⚠ TOR' : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadApiStatus() {
+  const resp = await fetch('/api/intel/status');
+  const data = await resp.json();
+  const tbody = document.querySelector('#tbl-api-status tbody');
+  const notes = {
+    abuseipdb:     'Free: 1000 lookups/day. Set ABUSEIPDB_KEY.',
+    virustotal:    'Free: 4 req/min. Set VIRUSTOTAL_KEY.',
+    malwarebazaar: 'Free, no key required.',
+    shodan:        'Free tier available. Set SHODAN_KEY.',
+  };
+  tbody.innerHTML = Object.entries(data).map(([k, active]) => `<tr>
+    <td style="color:var(--blue)">${k}</td>
+    <td>${active ? '<span style="color:var(--green)">✓ Configured</span>' : '<span style="color:var(--muted)">○ Not set</span>'}</td>
+    <td style="color:var(--muted);font-size:10px">${notes[k]||''}</td>
+  </tr>`).join('');
+}
+
+async function loadSysInfo() {
+  const resp = await fetch('/api/system');
+  const data = await resp.json();
+  const info = data.info || {};
+  const tbody = document.querySelector('#tbl-sysinfo tbody');
+  tbody.innerHTML = Object.entries(info)
+    .filter(([k, v]) => k !== 'disks' && !Array.isArray(v))
+    .map(([k, v]) => `<tr><td style="color:var(--muted)">${k.replace(/_/g,' ')}</td><td>${v}</td></tr>`)
+    .join('');
+  document.getElementById('sys-info-mini').textContent = `${info.hostname||''} / ${info.os||''} ${info.os_release||''}`;
+}
+
+async function loadProcesses() {
+  const resp = await fetch('/api/processes');
+  const procs = await resp.json();
+  const susp = procs.filter(p => p.flags && p.flags.length > 0);
+  const tbody = document.querySelector('#tbl-processes tbody');
+  tbody.innerHTML = susp.length === 0
+    ? '<tr><td colspan="6" class="empty">No suspicious processes.</td></tr>'
+    : susp.map(p => `<tr>
+        <td><span class="sev sev-${p.severity}">${p.severity}</span></td>
+        <td>${p.pid}</td><td>${p.name}</td><td>${p.username||''}</td>
+        <td class="mono" style="max-width:200px">${(p.exe||'').slice(-40)}</td>
+        <td style="color:var(--orange);font-size:10px">${(p.flags||[]).join(' | ')}</td>
+      </tr>`).join('');
+}
+
+async function loadNetwork() {
+  const resp = await fetch('/api/network/connections');
+  const conns = await resp.json();
+  const susp = conns.filter(c => c.flags && c.flags.length > 0);
+  const tbody = document.querySelector('#tbl-conns tbody');
+  tbody.innerHTML = susp.length === 0
+    ? '<tr><td colspan="7" class="empty">No suspicious connections.</td></tr>'
+    : susp.map(c => `<tr>
+        <td><span class="sev sev-${c.severity}">${c.severity}</span></td>
+        <td>${c.pid||''}</td><td>${c.process_name||''}</td>
+        <td class="mono">${c.laddr||''}</td><td class="mono">${c.raddr||''}</td>
+        <td>${c.status||''}</td>
+        <td style="color:var(--orange);font-size:10px">${(c.flags||[]).join(' | ')}</td>
+      </tr>`).join('');
+}
+
+// ═══════════════════ INIT ═══════════════════
+window.addEventListener('load', () => {
+  initSocket();
+  loadApiStatus();
+});
+</script>
+</body>
+</html>

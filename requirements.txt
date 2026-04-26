@@ -1,0 +1,18 @@
+# PyForensix v2 — Web Dashboard + All Modules
+# Install: pip install -r requirements.txt
+
+# ── Core (required) ───────────────────────────────────────────────────────────
+psutil>=5.9.0                # System inspection (processes, network, disk, memory)
+flask>=3.0.0                 # Web framework
+flask-socketio>=5.3.0        # WebSocket support (real-time dashboard)
+simple-websocket>=0.10.0     # SocketIO transport
+
+# ── Optional: enhanced detection ─────────────────────────────────────────────
+yara-python>=4.3.0           # YARA malware rule scanning
+scapy>=2.5.0                 # Packet capture & PCAP analysis
+
+# ── Windows-specific (install on Windows only) ────────────────────────────────
+# pywin32>=306               # Windows Event Log, Registry access
+
+# ── Optional: enhanced output ─────────────────────────────────────────────────
+# python-dotenv>=1.0         # Load API keys from .env file

@@ -1,6 +1,6 @@
 # ⚡ PyForensix
 
-System Forensics & Intrusion Detection Toolkit
+**System Forensics & Intrusion Detection Toolkit**
 
 A cross-platform Python toolkit for digital forensics and intrusion detection. Runs as a full **GUI dashboard** (Tkinter) or as a **CLI tool** for headless/server environments. Produces HTML, JSON, and CSV reports with MITRE ATT&CK tagging and remediation guidance.
 
@@ -25,7 +25,7 @@ A cross-platform Python toolkit for digital forensics and intrusion detection. R
 ### 1. Install dependencies
 
 ```bash
-git clone https://github.com/Kodjocares/pyforensix.git
+git clone https://github.com/yourname/pyforensix.git
 cd pyforensix
 pip install -r requirements.txt
 
